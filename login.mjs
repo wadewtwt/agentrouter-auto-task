@@ -18,6 +18,15 @@ async function record(status, message) {
   await writeFile(path.join(logDirectory, 'last-result.json'), JSON.stringify(result, null, 2), 'utf8');
 }
 
+/** 在页面操作被今日公告遮挡时关闭公告，并记录处理结果。 */
+async function registerAnnouncementHandler(loginPage) {
+  const closeToday = loginPage.getByRole('button', { name: '今日关闭', exact: true });
+  await loginPage.addLocatorHandler(closeToday, async () => {
+    await closeToday.click();
+    await record('announcement_closed', '已点击今日关闭，关闭系统公告。');
+  });
+}
+
 /** 根据已登录页面中的用户名定位右上角账户按钮。 */
 async function accountButton() {
   await page.waitForFunction(() => {
@@ -48,6 +57,7 @@ try {
     });
     context.setDefaultTimeout(30000);
     page = context.pages()[0] || await context.newPage();
+    await registerAnnouncementHandler(page);
     await page.goto('https://agentrouter.org/console', { waitUntil: 'domcontentloaded' });
     const githubButton = page.getByRole('button', { name: /使用 GitHub 继续|Continue with GitHub/i });
     await Promise.race([
@@ -66,6 +76,7 @@ try {
     const popup = page.waitForEvent('popup', { timeout: 30000 });
     await githubButton.click();
     page = await popup;
+    await registerAnnouncementHandler(page);
     await page.waitForURL(url => url.origin === 'https://agentrouter.org' && url.pathname.startsWith('/console'), {
       timeout: 90000,
     });
