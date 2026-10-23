@@ -9,6 +9,7 @@ process.env.PLAYWRIGHT_BROWSERS_PATH = path.join(root, 'browser-runtime');
 const { chromium } = await import('playwright');
 let context;
 let page;
+let stage = '初始化';
 
 /** 将运行结果写入本地日志，不记录凭据和 OAuth 地址。 */
 async function record(status, message) {
@@ -58,21 +59,26 @@ try {
     context.setDefaultTimeout(30000);
     page = context.pages()[0] || await context.newPage();
     await registerAnnouncementHandler(page);
+    stage = '打开控制台';
     await page.goto('https://agentrouter.org/console', { waitUntil: 'domcontentloaded' });
     const githubButton = page.getByRole('button', { name: /使用 GitHub 继续|Continue with GitHub/i });
-    await Promise.race([
+    stage = '等待登录按钮或账户按钮';
+    await Promise.any([
       githubButton.waitFor({ state: 'visible', timeout: 60000 }),
       accountButton(),
     ]);
     if (!await githubButton.isVisible()) {
+      stage = '打开账户菜单';
       const button = await accountButton();
       await button.hover();
+      stage = '等待并点击退出';
       const logout = page.getByText(/^(退出|退出登录|退出登陆|Logout|Log out|Sign out)$/i);
       await logout.waitFor({ state: 'visible' });
       await logout.click();
       await page.waitForURL(url => url.origin === 'https://agentrouter.org' && url.pathname === '/login');
       await record('logged_out', '已退出 AgentRouter 登录。');
     }
+    stage = '通过 GitHub 重新登录';
     const popup = page.waitForEvent('popup', { timeout: 30000 });
     await githubButton.click();
     page = await popup;
@@ -80,6 +86,7 @@ try {
     await page.waitForURL(url => url.origin === 'https://agentrouter.org' && url.pathname.startsWith('/console'), {
       timeout: 90000,
     });
+    stage = '验证重新登录后的账户按钮';
     await accountButton();
     await record('success', 'GitHub 登录完成，已确认返回控制台并显示账户菜单。');
   }
@@ -88,7 +95,7 @@ try {
     await page.screenshot({ path: path.join(logDirectory, 'last-failure.png') }).catch(() => {});
   }
   const detail = String(error.message).split('\n')[0].replace(/https?:\/\/\S+/g, '[URL]');
-  await record('failed', `登录流程失败（${error.name}: ${detail}）；请检查网络、页面变化或运行 npm run setup 更新 GitHub 会话。`);
+  await record('failed', `登录流程失败，阶段：${stage}（${error.name}: ${detail}）；请检查网络、页面变化或运行 npm run setup 更新 GitHub 会话。`);
   process.exitCode = 1;
 } finally {
   await context?.close();
