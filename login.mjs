@@ -33,14 +33,15 @@ async function accountButton() {
   await page.waitForFunction(() => {
     try {
       const user = JSON.parse(localStorage.getItem('user'));
-      return Boolean(user?.username);
+      return Boolean(user?.username) && [...document.querySelectorAll('header button')].some(button =>
+        button.textContent.includes(user.username) && button.getClientRects().length > 0 &&
+        getComputedStyle(button).visibility !== 'hidden');
     } catch {
       return false;
     }
   }, undefined, { timeout: 60000 });
   const username = await page.evaluate(() => JSON.parse(localStorage.getItem('user')).username);
   const button = page.locator('header button').filter({ hasText: username });
-  await button.waitFor({ state: 'visible', timeout: 60000 });
   return button;
 }
 
@@ -94,7 +95,9 @@ try {
   if (page && !page.isClosed()) {
     await page.screenshot({ path: path.join(logDirectory, 'last-failure.png') }).catch(() => {});
   }
-  const detail = String(error.message).split('\n')[0].replace(/https?:\/\/\S+/g, '[URL]');
+  const detail = (error instanceof AggregateError ? error.errors : [error])
+    .map(cause => String(cause.message).split('\n')[0].replace(/https?:\/\/\S+/g, '[URL]'))
+    .join('；');
   await record('failed', `登录流程失败，阶段：${stage}（${error.name}: ${detail}）；请检查网络、页面变化或运行 npm run setup 更新 GitHub 会话。`);
   process.exitCode = 1;
 } finally {
